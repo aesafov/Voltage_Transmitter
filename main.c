@@ -29,6 +29,13 @@ uint64_t multiplier;
 uint32_t result;
 uint32_t result_11bit, result_10bit, result_8bit;
 
+#define COUNT 1000
+uint8_t fl_ADC_start;
+uint16_t buff_data_ADC[COUNT];
+uint32_t count_conversion;
+uint16_t min_ADC_value;
+uint16_t max_ADC_value;
+
 //-----------------------------------------------------------------------------
 
 int main(void)
@@ -60,14 +67,36 @@ int main(void)
     tmpreg = 0;
     
     while (1)
-    {
-        ADC1->CR2 |= ADC_CR2_SWSTART | ADC_CR2_EXTTRIG;
-        
-        // Ждать завершения преобразования
-        for(volatile int i = 0; i < 83; i++) { __NOP(); }
-        while(!(ADC1->SR & ADC_SR_EOC));
-        // Чтение результата
-        adc_value = ADC1->DR & 0xFFF;
+    {        
+        if(fl_ADC_start)	  
+        {
+            ADC1->CR2 |= ADC_CR2_SWSTART | ADC_CR2_EXTTRIG;
+            
+            // Ждать завершения преобразования
+            while(!(ADC1->SR & ADC_SR_EOC));
+            
+            // Чтение результата
+            //adc_value = ADC1->DR & 0xFFF; 
+            
+            buff_data_ADC[count_conversion] = ADC1->DR & 0xFFF; 
+            count_conversion++;
+			if(count_conversion >= COUNT)
+			{
+				fl_ADC_start = 0;
+				count_conversion = 0;
+				
+				min_ADC_value = buff_data_ADC[COUNT/2];
+				max_ADC_value = min_ADC_value;
+				
+				for (count_conversion = 0; count_conversion <= COUNT-1; count_conversion++)
+				{
+					if(min_ADC_value < buff_data_ADC[count_conversion]) min_ADC_value = buff_data_ADC[count_conversion];
+					else if(max_ADC_value > buff_data_ADC[count_conversion]) max_ADC_value = buff_data_ADC[count_conversion];
+				}
+			}
+            
+            
+        }
         
 //        if (adc_value < INPUT_MIN) adc_value = INPUT_MIN;
 //        if (adc_value > INPUT_MAX) adc_value = INPUT_MAX;
@@ -76,7 +105,8 @@ int main(void)
 //        result_11bit = result >> 1;
 //        result_10bit = result >> 2;
 //        result_8bit = result >> 4;
-//        
+//      
+            
         GPIOA->ODR ^= GPIO_ODR_12;
         tmpreg++;
 		
@@ -159,7 +189,8 @@ void ADC1_Init(void)
     
     // Время сэмплирования
     ADC1->SMPR2 = 0;        
-    ADC1->SMPR2 |= (3U << ADC_SMPR2_SMP0_Pos); // 28.5 cycles
+//    ADC1->SMPR2 |= (3U << ADC_SMPR2_SMP0_Pos); // 28.5 cycles
+    ADC1->SMPR2 |= (7U << ADC_SMPR2_SMP0_Pos); // 239.5 cycles
     
     ADC1->CR2 |= (7U << ADC_CR2_EXTSEL_Pos); // SWSTART
     
