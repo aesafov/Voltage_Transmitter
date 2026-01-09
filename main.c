@@ -22,6 +22,10 @@ void SPI1_SendByte(uint8_t data);
 void Delay(__IO uint32_t nCount);
 
 uint16_t tx_data[] = {0xF000, 0x0000, 0x0000, 0x000F};
+uint16_t aTxBuff[32] = {0x5555, 0xffff, 0xffff, 0x555a, 0xffff, 0xffff, 0xffff, 0xffff, 
+						0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 
+						0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 
+						0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff};
 __IO uint32_t tmpreg;
 uint8_t fl=0;
 volatile uint16_t adc_value = 0;
@@ -45,24 +49,22 @@ int main(void)
     multiplier = ((uint64_t)OUTPUT_MAX * SCALE_FACTOR) / (INPUT_MAX - INPUT_MIN);
     
     GPIO_Init();
-//    DMA1_Init();
+    DMA1_Init();
 	SPI1_Init();    
     TIM6_Init();
     ADC1_Init();
-
-//    CLEAR_BIT(DMA1_Channel3->CCR, DMA_CCR_EN);
-//    DMA1->IFCR |= DMA_IFCR_CTCIF3;
-//    DMA1->IFCR |= DMA_IFCR_CTEIF3;
-//    SET_BIT(SPI1->CR2, SPI_CR2_TXDMAEN);
-    SPI1->CR1 |= SPI_CR1_SPE;
     
     // Запустить таймер
     TIM6->CR1 |= TIM_CR1_CEN;
-    
-//    DMA1_Channel3->CNDTR = 4;
-//    DMA1_Channel3->CPAR = (uint32_t)&SPI1->DR;
-//    DMA1_Channel3->CMAR = (uint32_t)tx_data;
-//    SET_BIT(DMA1_Channel3->CCR, DMA_CCR_EN);
+
+    DMA1_Channel3->CCR &= ~DMA_CCR_EN;
+    DMA1_Channel3->CPAR = (uint32_t)&(SPI1->DR);     // Периферийный адрес (SPI DR)
+    DMA1_Channel3->CMAR = (uint32_t)aTxBuff;         // Адрес буфера данных
+    DMA1_Channel3->CNDTR = 4;
+    DMA1_Channel3->CCR |= DMA_CCR_EN; // Запустить DMA
+    SPI1->CR1 |= SPI_CR1_CPHA;
+    SPI1->CR1 |= SPI_CR1_SPE;     // Включить SPI
+    SET_BIT(SPI1->CR2, SPI_CR2_TXDMAEN);
     
     tmpreg = 0;
     
@@ -253,18 +255,10 @@ void TIM6_DAC_IRQHandler(void)
         
         // Запуск ADC
         ADC1->CR2 |= ADC_CR2_SWSTART;
-        
-//        if(READ_BIT(DMA2->LISR, DMA_LISR_TCIF3) == (DMA_LISR_TCIF3))
-//        {
-//            WRITE_REG(DMA2->LIFCR, DMA_LIFCR_CTCIF3);
-//        }
-        
-        SPI1->DR = 0xA5A5;
 
-//        DMA1_Channel3->CNDTR = 4;
-//        DMA1_Channel3->CPAR = (uint32_t)&SPI1->DR;
-//        DMA1_Channel3->CMAR = (uint32_t)tx_data;
-//        SET_BIT(DMA1_Channel3->CCR, DMA_CCR_EN);
+        DMA1_Channel3->CCR &= ~DMA_CCR_EN;
+        DMA1_Channel3->CNDTR = 4;
+        DMA1_Channel3->CCR |= DMA_CCR_EN; // Запустить DMA
         
         GPIOF->ODR ^= GPIO_ODR_7;  // Переключить PF7       
         
@@ -284,10 +278,10 @@ void SPI1_Init(void)
     // Тактирование SPI1
     RCC->APB2ENR |= RCC_APB2ENR_SPI1EN;
     
-//    DMA1_Channel3->CCR = 0;
-//    SET_BIT(DMA1_Channel3->CCR, DMA_CCR_MINC | DMA_CCR_DIR);
-//    MODIFY_REG(DMA1_Channel3->CCR, DMA_CCR_PSIZE_1, DMA_CCR_PSIZE_0);
-//    MODIFY_REG(DMA1_Channel3->CCR, DMA_CCR_MSIZE_1, DMA_CCR_MSIZE_0);
+    DMA1_Channel3->CCR = 0;
+    SET_BIT(DMA1_Channel3->CCR, DMA_CCR_MINC | DMA_CCR_DIR);
+    MODIFY_REG(DMA1_Channel3->CCR, DMA_CCR_PSIZE_1, DMA_CCR_PSIZE_0);
+    MODIFY_REG(DMA1_Channel3->CCR, DMA_CCR_MSIZE_1, DMA_CCR_MSIZE_0);
     CLEAR_BIT(SPI1->CR1, 0x00FF);
     SET_BIT(SPI1->CR1, SPI_CR1_SSM | SPI_CR1_SSI | SPI_CR1_BR_1 | SPI_CR1_BR_0 | SPI_CR1_MSTR);
     CLEAR_BIT(SPI1->CR2, 0x00FF);
