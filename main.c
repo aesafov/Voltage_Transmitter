@@ -16,7 +16,7 @@ void SystemClock_Config(void);
 void TIM6_Init(void);
 void ADC1_Init(void);
 void SPI1_Init(void);
-void DMA2_Init(void);
+void DMA1_Init(void);
 void GPIO_Init(void);
 void SPI1_SendByte(uint8_t data);
 void Delay(__IO uint32_t nCount);
@@ -45,24 +45,24 @@ int main(void)
     multiplier = ((uint64_t)OUTPUT_MAX * SCALE_FACTOR) / (INPUT_MAX - INPUT_MIN);
     
     GPIO_Init();
-//    DMA2_Init();
-//	SPI1_Init();   
+//    DMA1_Init();
+	SPI1_Init();    
     TIM6_Init();
     ADC1_Init();
 
-//    CLEAR_BIT(DMA2_Stream3->CR, DMA_SxCR_EN);
-//    DMA2->LIFCR |= DMA_LIFCR_CTCIF3;
-//    DMA2->LIFCR |= DMA_LIFCR_CTEIF3;
+//    CLEAR_BIT(DMA1_Channel3->CCR, DMA_CCR_EN);
+//    DMA1->IFCR |= DMA_IFCR_CTCIF3;
+//    DMA1->IFCR |= DMA_IFCR_CTEIF3;
 //    SET_BIT(SPI1->CR2, SPI_CR2_TXDMAEN);
-//    SPI1->CR1 |= SPI_CR1_SPE;
+    SPI1->CR1 |= SPI_CR1_SPE;
     
     // Запустить таймер
     TIM6->CR1 |= TIM_CR1_CEN;
     
-//    DMA2_Stream3->NDTR = 4;
-//    DMA2_Stream3->PAR = (uint32_t)&SPI1->DR;
-//    DMA2_Stream3->M0AR = (uint32_t)tx_data;
-//    SET_BIT(DMA2_Stream3->CR, DMA_SxCR_EN);
+//    DMA1_Channel3->CNDTR = 4;
+//    DMA1_Channel3->CPAR = (uint32_t)&SPI1->DR;
+//    DMA1_Channel3->CMAR = (uint32_t)tx_data;
+//    SET_BIT(DMA1_Channel3->CCR, DMA_CCR_EN);
     
     tmpreg = 0;
     
@@ -107,7 +107,7 @@ int main(void)
 //        result_8bit = result >> 4;
 //      
             
-        GPIOA->ODR ^= GPIO_ODR_12;
+//        GPIOA->ODR ^= GPIO_ODR_12;
         tmpreg++;
 		
 //        for(volatile int i = 0; i < 83; i++) { __NOP(); }
@@ -133,8 +133,10 @@ void SystemClock_Config(void)
     // PLL: 12 / M * N
     // HSE = 12 MHz, M = 3, N = 16 → 64 MHz
     RCC->CFGR = 0;
-    RCC->CFGR |= (16U << RCC_CFGR_PLLMUL_Pos); // PLL input clock x 16   
-    RCC->CFGR2 = 3U << RCC_CFGR2_PREDIV_Pos; // HSE input to PLL divided by 3
+//    RCC->CFGR |= (16U << RCC_CFGR_PLLMUL_Pos); // PLL input clock x 16   
+//    RCC->CFGR2 = 2U << RCC_CFGR2_PREDIV_Pos; // HSE input to PLL divided by 3
+    RCC->CFGR |= RCC_CFGR_PLLMUL16;    
+    RCC->CFGR2 = RCC_CFGR2_PREDIV_DIV3;
 
     // Включить PLL
     RCC->CR |= RCC_CR_PLLON;
@@ -148,29 +150,47 @@ void SystemClock_Config(void)
 //-----------------------------------------------------------------------------
 void GPIO_Init(void)
 {
-    // Тактирование GPIOB и GPIOB
-    RCC->AHBENR |= RCC_AHBENR_GPIOAEN | RCC_AHBENR_GPIOBEN;
+    // Тактирование GPIOA и GPIOB
+    RCC->AHBENR |= RCC_AHBENR_GPIOAEN | RCC_AHBENR_GPIOBEN | RCC_AHBENR_GPIOFEN;
 
-//    // PA5 (SCK) - AF5
-//    GPIOA->MODER   &= ~GPIO_MODER_MODER5;
-//    GPIOA->MODER   |=  GPIO_MODER_MODER5_1;
-//    GPIOA->AFR[0]  |=  (5U << (5*4));
+    // PA12 (SCK) - AF6
+    GPIOA->MODER   &= ~GPIO_MODER_MODER12;
+    GPIOA->MODER   |=  GPIO_MODER_MODER12_1;
+//    GPIOA->AFR[1]  |=  (6U << (5*4));
+    GPIOA->AFR[1] &= ~(GPIO_AFRH_AFRH4_Msk); // Сбрасываем биты AFRH12
+    GPIOA->AFR[1] |= (0x6UL << GPIO_AFRH_AFRH4_Pos); // Устанавливаем AF6
 
-//    // PB5 (MOSI) - AF5
-//    GPIOB->MODER   &= ~GPIO_MODER_MODER5;
-//    GPIOB->MODER   |=  GPIO_MODER_MODER5_1;
-//    GPIOB->AFR[0]  |=  (5U << (5*4));
+    // PB5 (MOSI) - AF5
+    GPIOB->MODER   &= ~GPIO_MODER_MODER5;
+    GPIOB->MODER   |=  GPIO_MODER_MODER5_1;
+    GPIOB->AFR[0]  |=  (5U << (5*4));
     
-    // Настроить PA12 как Output (Push-Pull, 50 MHz)
-    GPIOA->MODER   &= ~GPIO_MODER_MODER12;      // Очистить биты
-    GPIOA->MODER   |=  GPIO_MODER_MODER12_0;    // Output mode
-    GPIOA->OSPEEDR |=  GPIO_OSPEEDER_OSPEEDR12; // High speed
-    GPIOA->OTYPER  &= ~GPIO_OTYPER_OT_12;        // Push-pull
-    GPIOA->PUPDR   &= ~GPIO_PUPDR_PUPDR12;      // No pull-up/pull-down
+    // Настроить PB7 как Output (Push-Pull, 50 MHz)
+    GPIOB->MODER   &= ~GPIO_MODER_MODER7;      // Очистить биты
+    GPIOB->MODER   |=  GPIO_MODER_MODER7_0;    // Output mode
+    GPIOB->OSPEEDR |=  GPIO_OSPEEDER_OSPEEDR7; // High speed
+    GPIOB->OTYPER  &= ~GPIO_OTYPER_OT_7;        // Push-pull
+    GPIOB->PUPDR   &= ~GPIO_PUPDR_PUPDR7;      // No pull-up/pull-down    
+    GPIOB->ODR |= GPIO_ODR_7;
+    
+//    // Настроить PA12 как Output (Push-Pull, 50 MHz)
+//    GPIOA->MODER   &= ~GPIO_MODER_MODER12;      // Очистить биты
+//    GPIOA->MODER   |=  GPIO_MODER_MODER12_0;    // Output mode
+//    GPIOA->OSPEEDR |=  GPIO_OSPEEDER_OSPEEDR12; // High speed
+//    GPIOA->OTYPER  &= ~GPIO_OTYPER_OT_12;        // Push-pull
+//    GPIOA->PUPDR   &= ~GPIO_PUPDR_PUPDR12;      // No pull-up/pull-down
     
     // Настроить PB1 как Analog Input
     GPIOB->MODER   |=  GPIO_MODER_MODER1_0 | GPIO_MODER_MODER1_1;  // Analog mode
     GPIOB->PUPDR   &= ~GPIO_PUPDR_PUPDR1;  // No pull-up/pull-down
+    
+    // Настроить PF7 как Output (Push-Pull, 50 MHz)
+    GPIOF->MODER   &= ~GPIO_MODER_MODER7;      // Очистить биты
+    GPIOF->MODER   |=  GPIO_MODER_MODER7_0;    // Output mode
+    GPIOF->OSPEEDR |=  GPIO_OSPEEDER_OSPEEDR7; // High speed
+    GPIOF->OTYPER  &= ~GPIO_OTYPER_OT_7;        // Push-pull
+    GPIOF->PUPDR   &= ~GPIO_PUPDR_PUPDR7;      // No pull-up/pull-down    
+    GPIOF->ODR |= GPIO_ODR_7;
 }
 //-----------------------------------------------------------------------------
 void ADC1_Init(void)
@@ -238,38 +258,41 @@ void TIM6_DAC_IRQHandler(void)
 //        {
 //            WRITE_REG(DMA2->LIFCR, DMA_LIFCR_CTCIF3);
 //        }
+        
+        SPI1->DR = 0xA5A5;
 
-//        DMA2_Stream3->NDTR = 4;
-//        DMA2_Stream3->PAR = (uint32_t)&SPI1->DR;
-//        DMA2_Stream3->M0AR = (uint32_t)tx_data;
-//        SET_BIT(DMA2_Stream3->CR, DMA_SxCR_EN);
-//        
-//        GPIOC->ODR &= ~GPIO_ODR_OD5;  // Переключить PC5       
+//        DMA1_Channel3->CNDTR = 4;
+//        DMA1_Channel3->CPAR = (uint32_t)&SPI1->DR;
+//        DMA1_Channel3->CMAR = (uint32_t)tx_data;
+//        SET_BIT(DMA1_Channel3->CCR, DMA_CCR_EN);
+        
+        GPIOF->ODR ^= GPIO_ODR_7;  // Переключить PF7       
         
     }
 }
 //-----------------------------------------------------------------------------
-//void DMA2_Init()
-//{
-//    SET_BIT(RCC->AHB1ENR, RCC_AHB1ENR_DMA2EN);
-//    tmpreg = READ_BIT(RCC->AHB1ENR, RCC_AHB1ENR_DMA2EN);
-//    (void)tmpreg;
-//    NVIC_EnableIRQ(DMA2_Stream3_IRQn);
-// }
+void DMA1_Init()
+{
+    SET_BIT(RCC->AHBENR, RCC_AHBENR_DMA1EN);
+    tmpreg = READ_BIT(RCC->AHBENR, RCC_AHBENR_DMA1EN);
+    (void)tmpreg;
+    NVIC_EnableIRQ(DMA1_Channel3_IRQn);
+ }
 //-----------------------------------------------------------------------------
-//void SPI1_Init(void)
-//{
-//    // Тактирование SPI1
-//    RCC->APB2ENR |= RCC_APB2ENR_SPI1EN;
-//    
-//    DMA2_Stream3->CR = 0;
-//    SET_BIT(DMA2_Stream3->CR, DMA_SxCR_MINC | DMA_SxCR_DIR_0 | DMA_SxCR_MINC | DMA_SxCR_CHSEL_0 | DMA_SxCR_CHSEL_1);
-//    MODIFY_REG(DMA2_Stream3->CR, DMA_SxCR_PSIZE_1, DMA_SxCR_PSIZE_0);
-//    MODIFY_REG(DMA2_Stream3->CR, DMA_SxCR_MSIZE_1, DMA_SxCR_MSIZE_0);
-//    CLEAR_BIT(SPI1->CR1, 0x00FF);
-//    SET_BIT(SPI1->CR1, SPI_CR1_SSM | SPI_CR1_SSI | SPI_CR1_BR_1 | SPI_CR1_DFF | SPI_CR1_BR_0 | SPI_CR1_MSTR);
-//    CLEAR_BIT(SPI1->CR2, 0x00FF);
-//}
+void SPI1_Init(void)
+{
+    // Тактирование SPI1
+    RCC->APB2ENR |= RCC_APB2ENR_SPI1EN;
+    
+//    DMA1_Channel3->CCR = 0;
+//    SET_BIT(DMA1_Channel3->CCR, DMA_CCR_MINC | DMA_CCR_DIR);
+//    MODIFY_REG(DMA1_Channel3->CCR, DMA_CCR_PSIZE_1, DMA_CCR_PSIZE_0);
+//    MODIFY_REG(DMA1_Channel3->CCR, DMA_CCR_MSIZE_1, DMA_CCR_MSIZE_0);
+    CLEAR_BIT(SPI1->CR1, 0x00FF);
+    SET_BIT(SPI1->CR1, SPI_CR1_SSM | SPI_CR1_SSI | SPI_CR1_BR_1 | SPI_CR1_BR_0 | SPI_CR1_MSTR);
+    CLEAR_BIT(SPI1->CR2, 0x00FF);
+    SET_BIT(SPI1->CR2, SPI_CR2_DS_0 | SPI_CR2_DS_1 | SPI_CR2_DS_2 | SPI_CR2_DS_3);
+}
 //-----------------------------------------------------------------------------
 /**
   * @brief  Delay Function.
