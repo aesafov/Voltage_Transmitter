@@ -48,7 +48,7 @@
             <NotGenerated>0</NotGenerated>
             <InvalidFlash>1</InvalidFlash>
           </TargetStatus>
-          <OutputDirectory>.\Test_407_CMSIS\</OutputDirectory>
+          <OutputDirectory>.\Voltage_Transmitter\</OutputDirectory>
           <OutputName>Voltage_Transmitter</OutputName>
           <CreateExecutable>1</CreateExecutable>
           <CreateLib>0</CreateLib>

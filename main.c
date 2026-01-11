@@ -28,8 +28,8 @@ uint16_t tx_data[] = {0xF000, 0x0000, 0x0000, 0x000F};
 //						0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff};
 //uint16_t aTxBuff[4] = {0x1999, 0x8666, 0x6679, 0x9878}; // 2018->0x07E2
 //uint16_t aTxBuff[4] = {0x1999, 0x9867, 0x9879, 0x9998}; // 800->0x320
-//uint16_t aTxBuff[4] = {0x1999, 0x9867, 0x9879, 0x9999}; // 800->0x320 + 1 бит в конце "1"
-uint16_t aTxBuff[4] = {0x1999, 0x9867, 0x9879, 0x9987}; // 801->0x321 + 1 бит в конце "1"
+uint16_t aTxBuff[4] = {0x1999, 0x9867, 0x9879, 0x9999}; // 800->0x320 + 1 бит в конце "1"
+//const uint16_t aTxBuff[4] = {0x1999, 0x9867, 0x9879, 0x9987}; // 801->0x321 + 1 бит в конце "1"
 __IO uint32_t tmpreg;
 uint8_t fl=0;
 volatile uint16_t adc_value = 0;
@@ -258,7 +258,7 @@ void TIM6_DAC_IRQHandler(void)
         TIM6->SR &= ~TIM_SR_UIF;  // Сбросить флаг прерывания
         
         // Запуск ADC
-        ADC1->CR2 |= ADC_CR2_SWSTART;
+        ADC1->CR2 |= ADC_CR2_SWSTART | ADC_CR2_EXTTRIG;
 
         DMA1_Channel3->CCR &= ~DMA_CCR_EN;
         DMA1_Channel3->CNDTR = 4;
