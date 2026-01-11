@@ -4,18 +4,13 @@ https://narodstream.ru/urok-178-cmsis-stm32f1-spi-dma/
 Урок 178. CMSIS. STM32F1. SPI. DMA
 Переделал под себя.
 */
-#include "stm32f3xx.h"
+//#include "stm32f3xx.h"
+#include "main.h"
 
 // Макросы для работы с CYCCNT
 #define DWT_CTRL    (*(volatile uint32_t*)0xE0001000)
 #define DWT_CYCCNT  (*(volatile uint32_t*)0xE0001004)
 #define SCB_DEMCR   (*(volatile uint32_t*)0xE000EDFC)
-
-#define INPUT_MIN 782  //минимальное значение АЦП
-#define INPUT_MAX 3896  //максимальное значение АЦП
-#define OUTPUT_MIN 0  // к чему нормировать минимум
-#define OUTPUT_MAX 3200  // к чему нормировать максимум
-#define SCALE_FACTOR 65536  // 2^16
 
 void SystemClock_Config(void);
 void TIM6_Init(void);
@@ -35,6 +30,12 @@ uint16_t tx_data[] = {0xF000, 0x0000, 0x0000, 0x000F};
 //uint16_t aTxBuff[4] = {0x1999, 0x9867, 0x9879, 0x9998}; // 800->0x320
 uint16_t aTxBuff[4] = {0x1999, 0x9867, 0x9879, 0x9999}; // 800->0x320 + 1 бит в конце "1"
 //const uint16_t aTxBuff[4] = {0x1999, 0x9867, 0x9879, 0x9987}; // 801->0x321 + 1 бит в конце "1"
+//const uint16_t aTxBuff[4] = {0x1998, 0x6799, 0x8678, 0x6679};
+//const uint16_t aTxBuff[4] = {0x1998, 0x6799, 0x8666, 0x6667};
+//const uint16_t aTxBuff[4] = {0x1998, 0x6799, 0x8679, 0x8799};
+//const uint16_t aTxBuff[4] = {0x1998, 0x6799, 0x8667, 0x9867};
+//const uint16_t aTxBuff[4] = {0x1998, 0x6799, 0x8678, 0x7999};
+
 __IO uint32_t tmpreg;
 uint8_t fl=0;
 volatile uint16_t adc_value = 0;
@@ -50,6 +51,9 @@ uint16_t min_ADC_value;
 uint16_t max_ADC_value;
 
 uint32_t elapsed_cycles;
+uint64_t test_data[100];
+uint8_t test_data_count = 0;
+uint8_t y = 0;
 
 union Out_t
 {
@@ -160,11 +164,34 @@ int main(void)
             //Добавил при отладке на плате
             data.output_64 = data.output_64 | 1;
             
+//            test_data[test_data_count] = data.output_64;
+//            test_data_count++;
+//            
+//            if(test_data_count >= 100)
+//            {
+//                test_data_count = 0;
+//                __NOP();
+//            }
+            
+            aTxBuff[3] = sendData[y][0];
+            aTxBuff[2] = sendData[y][1];
+            aTxBuff[1] = sendData[y][2];
+            aTxBuff[0] = sendData[y][3];
+            y++;
+            if(y >=9) y = 0;
+            
+            
+//            aTxBuff[3] = data.out_data[0];
+//            aTxBuff[2] = data.out_data[1];
+//            aTxBuff[1] = data.out_data[2];
+//            aTxBuff[0] = data.out_data[3];
+            
             uint32_t end_cycles = DWT_CYCCNT;
             elapsed_cycles = end_cycles - start_cycles;
 //            result_11bit = result >> 1;
 //            result_10bit = result >> 2;
 //            result_8bit = result >> 4;
+            GPIOF->ODR &= ~GPIO_ODR_7;
         }
             
         
@@ -272,8 +299,8 @@ void ADC1_Init(void)
     
     // Время сэмплирования
     ADC1->SMPR2 = 0;        
-//    ADC1->SMPR2 |= (3U << ADC_SMPR2_SMP0_Pos); // 28.5 cycles
-    ADC1->SMPR2 |= (7U << ADC_SMPR2_SMP0_Pos); // 239.5 cycles
+    ADC1->SMPR2 |= (3U << ADC_SMPR2_SMP0_Pos); // 28.5 cycles
+//    ADC1->SMPR2 |= (7U << ADC_SMPR2_SMP0_Pos); // 239.5 cycles
     
     ADC1->CR2 |= (7U << ADC_CR2_EXTSEL_Pos); // SWSTART
     
@@ -321,7 +348,8 @@ void TIM6_DAC_IRQHandler(void)
         DMA1_Channel3->CNDTR = 4;
         DMA1_Channel3->CCR |= DMA_CCR_EN; // Запустить DMA
         
-        GPIOF->ODR ^= GPIO_ODR_7;  // Переключить PF7       
+//        GPIOF->ODR ^= GPIO_ODR_7;  // Переключить PF7       
+        GPIOF->ODR |= GPIO_ODR_7;
         
     }
 }
