@@ -6,6 +6,11 @@ https://narodstream.ru/urok-178-cmsis-stm32f1-spi-dma/
 */
 #include "stm32f3xx.h"
 
+// Макросы для работы с CYCCNT
+#define DWT_CTRL    (*(volatile uint32_t*)0xE0001000)
+#define DWT_CYCCNT  (*(volatile uint32_t*)0xE0001004)
+#define SCB_DEMCR   (*(volatile uint32_t*)0xE000EDFC)
+
 #define INPUT_MIN 782  //минимальное значение АЦП
 #define INPUT_MAX 3896  //максимальное значение АЦП
 #define OUTPUT_MIN 0  // к чему нормировать минимум
@@ -33,7 +38,7 @@ uint16_t aTxBuff[4] = {0x1999, 0x9867, 0x9879, 0x9999}; // 800->0x320 + 1 бит
 __IO uint32_t tmpreg;
 uint8_t fl=0;
 volatile uint16_t adc_value = 0;
-uint64_t multiplier;
+uint32_t multiplier;
 uint32_t result;
 uint32_t result_11bit, result_10bit, result_8bit;
 
@@ -44,13 +49,29 @@ uint32_t count_conversion;
 uint16_t min_ADC_value;
 uint16_t max_ADC_value;
 
+uint32_t elapsed_cycles;
+
+union Out_t
+{
+    //uint8_t output[8];
+    uint16_t out_data[4];
+    uint64_t output_64;
+};
+union Out_t data;
+
 //-----------------------------------------------------------------------------
 
 int main(void)
 {
     SystemClock_Config();  // Настройка тактирования
     
-    multiplier = ((uint64_t)OUTPUT_MAX * SCALE_FACTOR) / (INPUT_MAX - INPUT_MIN);
+    // Разрешить доступ к DWT
+    SCB_DEMCR |= 0x01000000; // Set bit 24: Enable the debug monitor
+    // Включить Cycle Counter
+    DWT_CYCCNT = 0;          // Reset cycle counter
+    DWT_CTRL |= 1;           // Set bit 0: Enable the cycle counter
+    
+    multiplier = (OUTPUT_MAX * SCALE_FACTOR) / (INPUT_MAX - INPUT_MIN);
     
     GPIO_Init();
     DMA1_Init();
@@ -74,43 +95,79 @@ int main(void)
     
     while (1)
     {        
-        if(fl_ADC_start)	  
+//        if(fl_ADC_start)	  
+//        {
+//            ADC1->CR2 |= ADC_CR2_SWSTART | ADC_CR2_EXTTRIG;
+//            
+//            // Ждать завершения преобразования
+//            while(!(ADC1->SR & ADC_SR_EOC));
+//            
+//            // Чтение результата
+//            //adc_value = ADC1->DR & 0xFFF; 
+//            
+//            buff_data_ADC[count_conversion] = ADC1->DR & 0xFFF; 
+//            count_conversion++;
+//			if(count_conversion >= COUNT)
+//			{
+//				fl_ADC_start = 0;
+//				count_conversion = 0;
+//				
+//				min_ADC_value = buff_data_ADC[COUNT/2];
+//				max_ADC_value = min_ADC_value;
+//				
+//				for (count_conversion = 0; count_conversion <= COUNT-1; count_conversion++)
+//				{
+//					if(min_ADC_value < buff_data_ADC[count_conversion]) min_ADC_value = buff_data_ADC[count_conversion];
+//					else if(max_ADC_value > buff_data_ADC[count_conversion]) max_ADC_value = buff_data_ADC[count_conversion];
+//				}
+//			}
+//            
+//            
+//        }
+
+        // Если преобразование завершено
+        if(ADC1->SR & ADC_SR_EOC)
         {
-            ADC1->CR2 |= ADC_CR2_SWSTART | ADC_CR2_EXTTRIG;
-            
-            // Ждать завершения преобразования
-            while(!(ADC1->SR & ADC_SR_EOC));
+            uint32_t start_cycles = DWT_CYCCNT;
             
             // Чтение результата
-            //adc_value = ADC1->DR & 0xFFF; 
+            adc_value = ADC1->DR & 0xFFF;        
+            if (adc_value < INPUT_MIN) adc_value = INPUT_MIN;
+            if (adc_value > INPUT_MAX) adc_value = INPUT_MAX;
+            uint32_t temp = (adc_value - INPUT_MIN) * multiplier;
+            result = (int)(temp >> 16);
             
-            buff_data_ADC[count_conversion] = ADC1->DR & 0xFFF; 
-            count_conversion++;
-			if(count_conversion >= COUNT)
-			{
-				fl_ADC_start = 0;
-				count_conversion = 0;
-				
-				min_ADC_value = buff_data_ADC[COUNT/2];
-				max_ADC_value = min_ADC_value;
-				
-				for (count_conversion = 0; count_conversion <= COUNT-1; count_conversion++)
-				{
-					if(min_ADC_value < buff_data_ADC[count_conversion]) min_ADC_value = buff_data_ADC[count_conversion];
-					else if(max_ADC_value > buff_data_ADC[count_conversion]) max_ADC_value = buff_data_ADC[count_conversion];
-				}
-			}
+            uint16_t input = result;
             
+            int8_t bit_pos;// Позиция в битовой последовательности
+            uint8_t bit;
+            uint8_t pattern;
+
+            data.output_64 = 0;
+            data.output_64 |= 0xCCC;
+            for(bit_pos = 11; bit_pos > 0; bit_pos--)
+            {
+                bit = (input >> bit_pos) & 1;
+                pattern = bit ? 0b0011 : 0b1100;  // если 1 → "0011", если 0 → "1100"
+                data.output_64 = data.output_64 << 4;
+                data.output_64 = data.output_64 | pattern;
+            }
+            bit = (input >> bit_pos) & 1;
+            pattern = bit ? 0b0011 : 0b1100;  // если 1 → "0011", если 0 → "1100"
+            data.output_64 = data.output_64 << 4;
+            data.output_64 = data.output_64 | pattern;
+            data.output_64 = data.output_64 << 1;
+            //Добавил при отладке на плате
+            data.output_64 = data.output_64 | 1;
             
+            uint32_t end_cycles = DWT_CYCCNT;
+            elapsed_cycles = end_cycles - start_cycles;
+//            result_11bit = result >> 1;
+//            result_10bit = result >> 2;
+//            result_8bit = result >> 4;
         }
+            
         
-//        if (adc_value < INPUT_MIN) adc_value = INPUT_MIN;
-//        if (adc_value > INPUT_MAX) adc_value = INPUT_MAX;
-//        uint64_t temp = (adc_value - INPUT_MIN) * multiplier;
-//        result = (int)(temp >> 16);
-//        result_11bit = result >> 1;
-//        result_10bit = result >> 2;
-//        result_8bit = result >> 4;
 //      
             
 //        GPIOA->ODR ^= GPIO_ODR_12;
