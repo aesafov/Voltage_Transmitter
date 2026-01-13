@@ -18,6 +18,7 @@ void ADC1_Init(void);
 void SPI1_Init(void);
 void DMA1_Init(void);
 void GPIO_Init(void);
+void UART_Init(void);
 void SPI1_SendByte(uint8_t data);
 void Delay(__IO uint32_t nCount);
 
@@ -99,100 +100,110 @@ int main(void)
     
     while (1)
     {        
-//        if(fl_ADC_start)	  
-//        {
-//            ADC1->CR2 |= ADC_CR2_SWSTART | ADC_CR2_EXTTRIG;
-//            
-//            // Ждать завершения преобразования
-//            while(!(ADC1->SR & ADC_SR_EOC));
-//            
-//            // Чтение результата
-//            //adc_value = ADC1->DR & 0xFFF; 
-//            
-//            buff_data_ADC[count_conversion] = ADC1->DR & 0xFFF; 
-//            count_conversion++;
-//			if(count_conversion >= COUNT)
-//			{
-//				fl_ADC_start = 0;
-//				count_conversion = 0;
-//				
-//				min_ADC_value = buff_data_ADC[COUNT/2];
-//				max_ADC_value = min_ADC_value;
-//				
-//				for (count_conversion = 0; count_conversion <= COUNT-1; count_conversion++)
-//				{
-//					if(min_ADC_value < buff_data_ADC[count_conversion]) min_ADC_value = buff_data_ADC[count_conversion];
-//					else if(max_ADC_value > buff_data_ADC[count_conversion]) max_ADC_value = buff_data_ADC[count_conversion];
-//				}
-//			}
-//            
-//            
-//        }
-
-        // Если преобразование завершено
-        if(ADC1->SR & ADC_SR_EOC)
+        if(fl_ADC_start)	  
         {
-            uint32_t start_cycles = DWT_CYCCNT;
+            ADC1->CR2 |= ADC_CR2_SWSTART | ADC_CR2_EXTTRIG;
+            
+            // Ждать завершения преобразования
+            while(!(ADC1->SR & ADC_SR_EOC));
             
             // Чтение результата
-            adc_value = ADC1->DR & 0xFFF;        
-            if (adc_value < INPUT_MIN) adc_value = INPUT_MIN;
-            if (adc_value > INPUT_MAX) adc_value = INPUT_MAX;
-            uint32_t temp = (adc_value - INPUT_MIN) * multiplier;
-            result = (int)(temp >> 16);
+            //adc_value = ADC1->DR & 0xFFF; 
             
-            uint16_t input = result;
-            
-            int8_t bit_pos;// Позиция в битовой последовательности
-            uint8_t bit;
-            uint8_t pattern;
-
-            data.output_64 = 0;
-            data.output_64 |= 0xCCC;
-            for(bit_pos = 11; bit_pos > 0; bit_pos--)
-            {
-                bit = (input >> bit_pos) & 1;
-                pattern = bit ? 0b0011 : 0b1100;  // если 1 → "0011", если 0 → "1100"
-                data.output_64 = data.output_64 << 4;
-                data.output_64 = data.output_64 | pattern;
-            }
-            bit = (input >> bit_pos) & 1;
-            pattern = bit ? 0b0011 : 0b1100;  // если 1 → "0011", если 0 → "1100"
-            data.output_64 = data.output_64 << 4;
-            data.output_64 = data.output_64 | pattern;
-            data.output_64 = data.output_64 << 1;
-            //Добавил при отладке на плате
-            data.output_64 = data.output_64 | 1;
-            
-//            test_data[test_data_count] = data.output_64;
-//            test_data_count++;
-//            
-//            if(test_data_count >= 100)
-//            {
-//                test_data_count = 0;
-//                __NOP();
-//            }
-            
-            aTxBuff[3] = sendData[y][0];
-            aTxBuff[2] = sendData[y][1];
-            aTxBuff[1] = sendData[y][2];
-            aTxBuff[0] = sendData[y][3];
-            y++;
-            if(y >=9) y = 0;
-            
-            
-//            aTxBuff[3] = data.out_data[0];
-//            aTxBuff[2] = data.out_data[1];
-//            aTxBuff[1] = data.out_data[2];
-//            aTxBuff[0] = data.out_data[3];
-            
-            uint32_t end_cycles = DWT_CYCCNT;
-            elapsed_cycles = end_cycles - start_cycles;
-//            result_11bit = result >> 1;
-//            result_10bit = result >> 2;
-//            result_8bit = result >> 4;
-            GPIOF->ODR &= ~GPIO_ODR_7;
+            buff_data_ADC[count_conversion] = ADC1->DR & 0xFFF; 
+            count_conversion++;
+			if(count_conversion >= COUNT)
+			{
+				fl_ADC_start = 0;
+				count_conversion = 0;
+				
+				min_ADC_value = buff_data_ADC[COUNT/2];
+				max_ADC_value = min_ADC_value;
+				
+				for (count_conversion = 0; count_conversion <= COUNT-1; count_conversion++)
+				{
+					if(min_ADC_value < buff_data_ADC[count_conversion]) min_ADC_value = buff_data_ADC[count_conversion];
+					else if(max_ADC_value > buff_data_ADC[count_conversion]) max_ADC_value = buff_data_ADC[count_conversion];
+				}
+				
+				// RS-485 на передачу
+				GPIOF->ODR |= GPIO_ODR_7;
+				
+				for (int count_conversion = 0; count_conversion < COUNT - 1; count_conversion++) 
+				{
+					while (!(USART1->ISR & USART_ISR_TXE));
+					USART1->TDR = (buff_data_ADC[count_conversion] >> 8) & 0xFF;
+					
+					while (!(USART1->ISR & USART_ISR_TXE));
+					USART1->TDR = buff_data_ADC[count_conversion] & 0xFF;
+				}				
+			}            
         }
+
+//        // Если преобразование завершено
+//        if(ADC1->SR & ADC_SR_EOC)
+//        {
+//            uint32_t start_cycles = DWT_CYCCNT;
+//            
+//            // Чтение результата
+//            adc_value = ADC1->DR & 0xFFF;        
+//            if (adc_value < INPUT_MIN) adc_value = INPUT_MIN;
+//            if (adc_value > INPUT_MAX) adc_value = INPUT_MAX;
+//            uint32_t temp = (adc_value - INPUT_MIN) * multiplier;
+//            result = (int)(temp >> 16);
+//            
+//            uint16_t input = result;
+//            
+//            int8_t bit_pos;// Позиция в битовой последовательности
+//            uint8_t bit;
+//            uint8_t pattern;
+
+//            data.output_64 = 0;
+//            data.output_64 |= 0xCCC;
+//            for(bit_pos = 11; bit_pos > 0; bit_pos--)
+//            {
+//                bit = (input >> bit_pos) & 1;
+//                pattern = bit ? 0b0011 : 0b1100;  // если 1 → "0011", если 0 → "1100"
+//                data.output_64 = data.output_64 << 4;
+//                data.output_64 = data.output_64 | pattern;
+//            }
+//            bit = (input >> bit_pos) & 1;
+//            pattern = bit ? 0b0011 : 0b1100;  // если 1 → "0011", если 0 → "1100"
+//            data.output_64 = data.output_64 << 4;
+//            data.output_64 = data.output_64 | pattern;
+//            data.output_64 = data.output_64 << 1;
+//            //Добавил при отладке на плате
+//            data.output_64 = data.output_64 | 1;
+//            
+////            test_data[test_data_count] = data.output_64;
+////            test_data_count++;
+////            
+////            if(test_data_count >= 100)
+////            {
+////                test_data_count = 0;
+////                __NOP();
+////            }
+//            
+//            aTxBuff[3] = sendData[y][0];
+//            aTxBuff[2] = sendData[y][1];
+//            aTxBuff[1] = sendData[y][2];
+//            aTxBuff[0] = sendData[y][3];
+//            y++;
+//            if(y >=9) y = 0;
+//            
+//            
+////            aTxBuff[3] = data.out_data[0];
+////            aTxBuff[2] = data.out_data[1];
+////            aTxBuff[1] = data.out_data[2];
+////            aTxBuff[0] = data.out_data[3];
+//            
+//            uint32_t end_cycles = DWT_CYCCNT;
+//            elapsed_cycles = end_cycles - start_cycles;
+////            result_11bit = result >> 1;
+////            result_10bit = result >> 2;
+////            result_8bit = result >> 4;
+//            GPIOF->ODR &= ~GPIO_ODR_7;
+//        }
             
         
 //      
@@ -348,8 +359,8 @@ void TIM6_DAC_IRQHandler(void)
         DMA1_Channel3->CNDTR = 4;
         DMA1_Channel3->CCR |= DMA_CCR_EN; // Запустить DMA
         
-//        GPIOF->ODR ^= GPIO_ODR_7;  // Переключить PF7       
-        GPIOF->ODR |= GPIO_ODR_7;
+////        GPIOF->ODR ^= GPIO_ODR_7;  // Переключить PF7       
+//        GPIOF->ODR |= GPIO_ODR_7;
         
     }
 }
@@ -375,6 +386,24 @@ void SPI1_Init(void)
     SET_BIT(SPI1->CR1, SPI_CR1_SSM | SPI_CR1_SSI | SPI_CR1_BR_1 | SPI_CR1_BR_0 | SPI_CR1_MSTR);
     CLEAR_BIT(SPI1->CR2, 0x00FF);
     SET_BIT(SPI1->CR2, SPI_CR2_DS_0 | SPI_CR2_DS_1 | SPI_CR2_DS_2 | SPI_CR2_DS_3);
+}
+//-----------------------------------------------------------------------------
+void UART_Init(void) 
+{
+	RCC->APB2ENR |= RCC_APB2ENR_USART1EN; // Тактирование USART1
+	
+	USART1->CR1 = 0x00000000U;
+    USART1->CR2 = 0x00000000U;
+    USART1->CR3 = 0x00000000U;
+	
+	// Установить делитель скорости на 115200 @ 64MHz
+    USART1->BRR = 0x22CU;
+
+    // Включить USART
+    USART1->CR1 |= USART_CR1_UE;
+
+    // Включить передатчик
+    USART1->CR1 |= USART_CR1_TE;
 }
 //-----------------------------------------------------------------------------
 /**
