@@ -83,6 +83,7 @@ int main(void)
 	SPI1_Init();    
     TIM6_Init();
     ADC1_Init();
+    UART_Init();
     
     // Запустить таймер
     TIM6->CR1 |= TIM_CR1_CEN;
@@ -102,6 +103,7 @@ int main(void)
     {        
         if(fl_ADC_start)	  
         {
+//            for(volatile int i = 0; i < 5; i++) { __NOP(); }
             ADC1->CR2 |= ADC_CR2_SWSTART | ADC_CR2_EXTTRIG;
             
             // Ждать завершения преобразования
@@ -136,7 +138,10 @@ int main(void)
 					
 					while (!(USART1->ISR & USART_ISR_TXE));
 					USART1->TDR = buff_data_ADC[count_conversion] & 0xFF;
-				}				
+
+				}	
+                // RS-485 на передачу
+				GPIOF->ODR &= ~GPIO_ODR_7;                
 			}            
         }
 
@@ -309,7 +314,8 @@ void ADC1_Init(void)
     ADC1->SQR3 |= (9U << 0);  // ADC_IN9    
     
     // Время сэмплирования
-    ADC1->SMPR2 = 0;        
+    ADC1->SMPR2 = 0;     
+//    ADC1->SMPR2 |= (0U << ADC_SMPR2_SMP0_Pos); // 1.5 cycles    
     ADC1->SMPR2 |= (3U << ADC_SMPR2_SMP0_Pos); // 28.5 cycles
 //    ADC1->SMPR2 |= (7U << ADC_SMPR2_SMP0_Pos); // 239.5 cycles
     
@@ -391,6 +397,23 @@ void SPI1_Init(void)
 void UART_Init(void) 
 {
 	RCC->APB2ENR |= RCC_APB2ENR_USART1EN; // Тактирование USART1
+    RCC->AHBENR |= RCC_AHBENR_GPIOAEN; // Тактирование порта A
+    
+    GPIOA->MODER &= ~(GPIO_MODER_MODER9_Msk); // Сброс битов моды для PA9
+    GPIOA->MODER |= (2UL << GPIO_MODER_MODER9_Pos); // Установка 10b (Alternate Function)
+
+    // Тип выхода - Push-Pull (по умолчанию)
+    GPIOA->OTYPER &= ~(GPIO_OTYPER_OT_9);
+
+    // Скорость вывода - High Speed
+    GPIOA->OSPEEDR |= (GPIO_OSPEEDER_OSPEEDR9_Msk);
+
+    // Подтяжка - нет (No pull-up, No pull-down)
+    GPIOA->PUPDR &= ~(GPIO_PUPDR_PUPDR9_Msk);
+
+    // Выбрать AF7 для PA9
+    GPIOA->AFR[1] &= ~(GPIO_AFRH_AFRH1_Msk); // Сброс битов альтернативной функции для PA9
+    GPIOA->AFR[1] |= (7UL << GPIO_AFRH_AFRH1_Pos); // Установка AF7
 	
 	USART1->CR1 = 0x00000000U;
     USART1->CR2 = 0x00000000U;
