@@ -3,10 +3,11 @@
 
 #include "stm32f3xx.h"
 
-#define INPUT_MIN 782  //минимальное значение АЦП
-#define INPUT_MAX 3896  //максимальное значение АЦП
-#define OUTPUT_MIN 0  // к чему нормировать минимум
-#define OUTPUT_MAX 3200  // к чему нормировать максимум
+#define INPUT_MIN 1  //минимальное значение АЦП
+#define INPUT_MAX 3726  //максимальное значение АЦП
+//#define INPUT_MAX 4000  //максимальное значение АЦП
+#define OUTPUT_MIN 800  // к чему нормировать минимум
+#define OUTPUT_MAX 4000  // к чему нормировать максимум
 #define SCALE_FACTOR 65536  // 2^16
 
 const uint16_t sendData[3200][4] = {

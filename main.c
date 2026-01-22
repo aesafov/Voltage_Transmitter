@@ -50,6 +50,14 @@ uint16_t buff_data_ADC[COUNT];
 uint32_t count_conversion;
 uint16_t min_ADC_value;
 uint16_t max_ADC_value;
+#define RING_BUFFER_SIZE 8
+typedef struct {
+    uint16_t buffer[RING_BUFFER_SIZE]; // Массив данных
+    volatile uint8_t head;                       // Индекс следующей позиции для записи
+    volatile uint8_t tail;                       // Индекс следующей позиции для чтения
+} RingBuffer;
+RingBuffer my_ring_buffer = { .head = 0, .tail = 0 };
+uint32_t average;
 
 uint32_t elapsed_cycles;
 uint64_t test_data[100];
@@ -76,7 +84,8 @@ int main(void)
     DWT_CYCCNT = 0;          // Reset cycle counter
     DWT_CTRL |= 1;           // Set bit 0: Enable the cycle counter
     
-    multiplier = (OUTPUT_MAX * SCALE_FACTOR) / (INPUT_MAX - INPUT_MIN);
+    multiplier = ((OUTPUT_MAX - OUTPUT_MIN) * SCALE_FACTOR) / (INPUT_MAX - INPUT_MIN);
+//    multiplier = (OUTPUT_MAX * SCALE_FACTOR) / (3724 - 2);
     
     GPIO_Init();
     DMA1_Init();
@@ -101,114 +110,141 @@ int main(void)
     
     while (1)
     {        
-        if(fl_ADC_start)	  
-        {
-//            for(volatile int i = 0; i < 5; i++) { __NOP(); }
-            ADC1->CR2 |= ADC_CR2_SWSTART | ADC_CR2_EXTTRIG;
-            
-            // Ждать завершения преобразования
-            while(!(ADC1->SR & ADC_SR_EOC));
-            
-            // Чтение результата
-            //adc_value = ADC1->DR & 0xFFF; 
-            
-            buff_data_ADC[count_conversion] = ADC1->DR & 0xFFF; 
-            count_conversion++;
-			if(count_conversion >= COUNT)
-			{
-				fl_ADC_start = 0;
-				count_conversion = 0;
-				
-				min_ADC_value = buff_data_ADC[COUNT/2];
-				max_ADC_value = min_ADC_value;
-				
-				for (count_conversion = 0; count_conversion <= COUNT-1; count_conversion++)
-				{
-					if(min_ADC_value < buff_data_ADC[count_conversion]) min_ADC_value = buff_data_ADC[count_conversion];
-					else if(max_ADC_value > buff_data_ADC[count_conversion]) max_ADC_value = buff_data_ADC[count_conversion];
-				}
-				
-				// RS-485 на передачу
-				GPIOF->ODR |= GPIO_ODR_7;
-				
-				for (int count_conversion = 0; count_conversion < COUNT - 1; count_conversion++) 
-				{
-					while (!(USART1->ISR & USART_ISR_TXE));
-					USART1->TDR = (buff_data_ADC[count_conversion] >> 8) & 0xFF;
-					
-					while (!(USART1->ISR & USART_ISR_TXE));
-					USART1->TDR = buff_data_ADC[count_conversion] & 0xFF;
-
-				}	
-                // RS-485 на передачу
-				GPIOF->ODR &= ~GPIO_ODR_7;                
-			}            
-        }
-
-//        // Если преобразование завершено
-//        if(ADC1->SR & ADC_SR_EOC)
+//        if(fl_ADC_start)	  
 //        {
-//            uint32_t start_cycles = DWT_CYCCNT;
+//            ADC1->CR2 |= ADC_CR2_SWSTART | ADC_CR2_EXTTRIG;
+//            
+//            // Ждать завершения преобразования
+//            while(!(ADC1->SR & ADC_SR_EOC));
 //            
 //            // Чтение результата
-//            adc_value = ADC1->DR & 0xFFF;        
-//            if (adc_value < INPUT_MIN) adc_value = INPUT_MIN;
-//            if (adc_value > INPUT_MAX) adc_value = INPUT_MAX;
-//            uint32_t temp = (adc_value - INPUT_MIN) * multiplier;
-//            result = (int)(temp >> 16);
+//            //adc_value = ADC1->DR & 0xFFF; 
 //            
-//            uint16_t input = result;
-//            
-//            int8_t bit_pos;// Позиция в битовой последовательности
-//            uint8_t bit;
-//            uint8_t pattern;
+//            buff_data_ADC[count_conversion] = ADC1->DR & 0xFFF; 
+//            count_conversion++;
+//			if(count_conversion >= COUNT)
+//			{
+//				fl_ADC_start = 0;
+//				count_conversion = 0;
+//				
+//				min_ADC_value = buff_data_ADC[COUNT/2];
+//				max_ADC_value = min_ADC_value;
+//				
+//				for (count_conversion = 0; count_conversion <= COUNT-1; count_conversion++)
+//				{
+//					if(min_ADC_value < buff_data_ADC[count_conversion]) min_ADC_value = buff_data_ADC[count_conversion];
+//					else if(max_ADC_value > buff_data_ADC[count_conversion]) max_ADC_value = buff_data_ADC[count_conversion];
+//				}
+//				
+//				// RS-485 на передачу
+//				GPIOF->ODR |= GPIO_ODR_7;
+//				
+//				for (int count_conversion = 0; count_conversion < COUNT - 1; count_conversion++) 
+//				{
+//					while (!(USART1->ISR & USART_ISR_TXE));
+//					USART1->TDR = (buff_data_ADC[count_conversion] >> 8) & 0xFF;
+//					
+//					while (!(USART1->ISR & USART_ISR_TXE));
+//					USART1->TDR = buff_data_ADC[count_conversion] & 0xFF;
 
-//            data.output_64 = 0;
-//            data.output_64 |= 0xCCC;
-//            for(bit_pos = 11; bit_pos > 0; bit_pos--)
+//				}	
+//                // RS-485 на передачу
+//				GPIOF->ODR &= ~GPIO_ODR_7;                
+//			}            
+//        }
+
+        // Если преобразование завершено
+        if(ADC1->SR & ADC_SR_EOC)
+        {
+            uint32_t start_cycles = DWT_CYCCNT;
+            
+            // Чтение результата
+            adc_value = ADC1->DR & 0xFFF;        
+            if (adc_value < INPUT_MIN) adc_value = INPUT_MIN;
+//            if (adc_value < 2) adc_value = 2;
+            if (adc_value > INPUT_MAX) adc_value = INPUT_MAX;
+//            if (adc_value > 3724) adc_value = 3724;
+            
+            my_ring_buffer.buffer[my_ring_buffer.head] = adc_value;
+            my_ring_buffer.head = (my_ring_buffer.head + 1) & (RING_BUFFER_SIZE - 1);
+
+            average = my_ring_buffer.buffer[0];
+            average += my_ring_buffer.buffer[1];
+            average += my_ring_buffer.buffer[2];
+            average += my_ring_buffer.buffer[3];
+            average += my_ring_buffer.buffer[4];
+            average += my_ring_buffer.buffer[5];
+            average += my_ring_buffer.buffer[6];
+            average += my_ring_buffer.buffer[7];
+            average = average >> 3; // делим на 8
+
+//            buff_data_ADC[count_conversion] = my_ring_buffer.head;
+//            count_conversion++;
+//			if(count_conversion >= COUNT)
+//			{
+//                count_conversion = 0;
+//            }  
+
+            if (average < INPUT_MIN) average = INPUT_MIN;
+            if (average > INPUT_MAX) average = INPUT_MAX;
+            uint32_t temp = average * multiplier;
+//            uint32_t temp = (average - 2) * multiplier;
+            result = (int)(temp >> 16) + OUTPUT_MIN;            
+            
+            uint16_t input = 1 + result; // чтоб никогда не был 0
+            
+            int8_t bit_pos;// Позиция в битовой последовательности
+            uint8_t bit;
+            uint8_t pattern;
+
+            data.output_64 = 0;
+            data.output_64 |= 0xCCC;
+            for(bit_pos = 11; bit_pos > 0; bit_pos--)
+            {
+                bit = (input >> bit_pos) & 1;
+                pattern = bit ? 0b0011 : 0b1100;  // если 1 → "0011", если 0 → "1100"
+                data.output_64 = data.output_64 << 4;
+                data.output_64 = data.output_64 | pattern;
+            }
+            bit = (input >> bit_pos) & 1;
+            pattern = bit ? 0b0011 : 0b1100;  // если 1 → "0011", если 0 → "1100"
+            data.output_64 = data.output_64 << 4;
+            data.output_64 = data.output_64 | pattern;
+            data.output_64 = data.output_64 << 1;
+            //Добавил при отладке на плате
+            data.output_64 = data.output_64 | 1;
+            
+//            test_data[test_data_count] = data.output_64;
+//            test_data_count++;
+//            
+//            if(test_data_count >= 100)
 //            {
-//                bit = (input >> bit_pos) & 1;
-//                pattern = bit ? 0b0011 : 0b1100;  // если 1 → "0011", если 0 → "1100"
-//                data.output_64 = data.output_64 << 4;
-//                data.output_64 = data.output_64 | pattern;
+//                test_data_count = 0;
+//                __NOP();
 //            }
-//            bit = (input >> bit_pos) & 1;
-//            pattern = bit ? 0b0011 : 0b1100;  // если 1 → "0011", если 0 → "1100"
-//            data.output_64 = data.output_64 << 4;
-//            data.output_64 = data.output_64 | pattern;
-//            data.output_64 = data.output_64 << 1;
-//            //Добавил при отладке на плате
-//            data.output_64 = data.output_64 | 1;
-//            
-////            test_data[test_data_count] = data.output_64;
-////            test_data_count++;
-////            
-////            if(test_data_count >= 100)
-////            {
-////                test_data_count = 0;
-////                __NOP();
-////            }
-//            
-//            aTxBuff[3] = sendData[y][0];
-//            aTxBuff[2] = sendData[y][1];
-//            aTxBuff[1] = sendData[y][2];
-//            aTxBuff[0] = sendData[y][3];
+            
+//            aTxBuff[3] = sendData[result][0];
+//            aTxBuff[2] = sendData[result][1];
+//            aTxBuff[1] = sendData[result][2];
+//            aTxBuff[0] = sendData[result][3];
 //            y++;
 //            if(y >=9) y = 0;
-//            
-//            
-////            aTxBuff[3] = data.out_data[0];
-////            aTxBuff[2] = data.out_data[1];
-////            aTxBuff[1] = data.out_data[2];
-////            aTxBuff[0] = data.out_data[3];
-//            
-//            uint32_t end_cycles = DWT_CYCCNT;
-//            elapsed_cycles = end_cycles - start_cycles;
-////            result_11bit = result >> 1;
-////            result_10bit = result >> 2;
-////            result_8bit = result >> 4;
-//            GPIOF->ODR &= ~GPIO_ODR_7;
-//        }
+            
+            
+            aTxBuff[3] = data.out_data[0];
+            aTxBuff[2] = data.out_data[1];
+            aTxBuff[1] = data.out_data[2];
+            aTxBuff[0] = data.out_data[3];
+
+
+            
+            uint32_t end_cycles = DWT_CYCCNT;
+            elapsed_cycles = end_cycles - start_cycles;
+//            result_11bit = result >> 1;
+//            result_10bit = result >> 2;
+//            result_8bit = result >> 4;
+            GPIOF->ODR &= ~GPIO_ODR_7;
+        }
             
         
 //      
